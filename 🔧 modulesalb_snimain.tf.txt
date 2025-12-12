@@ -1,0 +1,124 @@
+🔧 modules/alb_sni/main.tf
+
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
+variable "name" {
+  type        = string
+  description = "Name prefix for ALB resources"
+}
+
+variable "vpc_id" {
+  type        = string
+  description = "VPC ID for the ALB"
+}
+
+variable "subnet_ids" {
+  type        = list(string)
+  description = "List of public subnet IDs for the ALB"
+}
+
+variable "security_group_ids" {
+  type        = list(string)
+  description = "Security groups to attach to the ALB"
+}
+
+variable "default_certificate_arn" {
+  type        = string
+  description = "ACM ARN for the default SSL certificate (e.g. app.mycorp.com)"
+}
+
+variable "extra_certificate_arns" {
+  type        = list(string)
+  description = "Additional ACM ARNs for SNI (e.g. admin.mycorp.com etc.)"
+  default     = []
+}
+
+variable "target_group_arn" {
+  type        = string
+  description = "ARN of existing target group to forward HTTPS traffic to"
+}
+
+resource "aws_lb" "this" {
+  name               = "${var.name}-alb"
+  load_balancer_type = "application"
+  internal           = false
+  security_groups    = var.security_group_ids
+  subnets            = var.subnet_ids
+
+  enable_deletion_protection = false
+}
+
+# HTTP listener (optional) - redirect to HTTPS
+resource "aws_lb_listener" "http" {
+  load_balancer_arn = aws_lb.this.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type = "redirect"
+
+    redirect {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "301"
+    }
+  }
+}
+
+# HTTPS listener with default certificate
+resource "aws_lb_listener" "https" {
+  load_balancer_arn = aws_lb.this.arn
+  port              = 443
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-2016-08"
+  certificate_arn   = var.default_certificate_arn
+
+  default_action {
+    type             = "forward"
+    target_group_arn = var.target_group_arn
+  }
+}
+
+# Additional SNI certificates
+resource "aws_lb_listener_certificate" "extra" {
+  count = length(var.extra_certificate_arns)
+
+  listener_arn    = aws_lb_listener.https.arn
+  certificate_arn = var.extra_certificate_arns[count.index]
+}
+
+output "alb_dns_name" {
+  value       = aws_lb.this.dns_name
+  description = "DNS name of the ALB"
+}
+
+
+
+🔧 Example Usage in Root Module
+
+
+module "alb_sni" {
+  source = "./modules/alb_sni"
+
+  name                = "ssl-sni-demo"
+  vpc_id              = aws_vpc.main.id
+  subnet_ids          = [aws_subnet.public_a.id, aws_subnet.public_b.id]
+  security_group_ids  = [aws_security_group.alb_sg.id]
+
+  default_certificate_arn = aws_acm_certificate.app.arn
+  extra_certificate_arns  = [
+    aws_acm_certificate.admin.arn,
+    aws_acm_certificate.api.arn
+  ]
+
+  target_group_arn    = aws_lb_target_group.app_tg.arn
+}
+
+
