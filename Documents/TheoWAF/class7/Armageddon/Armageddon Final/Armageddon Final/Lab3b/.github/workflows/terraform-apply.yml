@@ -1,0 +1,243 @@
+name: Terraform Apply & Audit
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '**.tf'
+      - 'terraform.tfvars'
+      - '.github/workflows/terraform-apply.yml'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  terraform-apply:
+    name: Terraform Apply
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        working-directory: ['.']
+      max-parallel: 1
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: latest
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-1
+
+      - name: Terraform init
+        working-directory: ${{ matrix.working-directory }}
+        run: terraform init
+
+      - name: Terraform format check
+        working-directory: ${{ matrix.working-directory }}
+        run: terraform fmt -check -recursive
+        continue-on-error: true
+
+      - name: Terraform validate
+        working-directory: ${{ matrix.working-directory }}
+        run: terraform validate
+
+      - name: Terraform plan
+        working-directory: ${{ matrix.working-directory }}
+        run: terraform plan -no-color -out=tfplan.binary
+        id: plan
+
+      - name: Terraform apply
+        working-directory: ${{ matrix.working-directory }}
+        run: terraform apply -auto-approve tfplan.binary
+
+      - name: Generate state summary
+        working-directory: ${{ matrix.working-directory }}
+        run: terraform show -no-color > tfstate_summary.txt || true
+
+      - name: Upload state summary as artifact
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: terraform-state-${{ matrix.working-directory }}
+          path: ${{ matrix.working-directory }}/tfstate_summary.txt
+          retention-days: 30
+
+  saopaulo-apply:
+    name: Terraform Apply (São Paulo)
+    runs-on: ubuntu-latest
+    needs: terraform-apply
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: latest
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: sa-east-1
+
+      - name: Terraform init
+        working-directory: saopaulo
+        run: terraform init
+
+      - name: Terraform validate
+        working-directory: saopaulo
+        run: terraform validate
+
+      - name: Terraform plan
+        working-directory: saopaulo
+        run: terraform plan -no-color -out=tfplan.binary
+        id: plan
+
+      - name: Terraform apply
+        working-directory: saopaulo
+        run: terraform apply -auto-approve tfplan.binary
+
+      - name: Generate state summary
+        working-directory: saopaulo
+        run: terraform show -no-color > tfstate_summary.txt || true
+
+      - name: Upload state summary as artifact
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: terraform-state-saopaulo
+          path: saopaulo/tfstate_summary.txt
+          retention-days: 30
+
+  run-audit-gates:
+    name: Run Audit Gates
+    runs-on: ubuntu-latest
+    needs: [terraform-apply, saopaulo-apply]
+    if: always()
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install boto3 requests jq awscli
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-1
+
+      - name: Run audit gates
+        run: bash run_all_gates.sh
+        continue-on-error: true
+        env:
+          ORIGIN_REGION: ap-northeast-1
+          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
+          ROUTE53_ZONE_ID: ${{ secrets.ROUTE53_ZONE_ID }}
+          CF_DISTRIBUTION_ID: ${{ secrets.CF_DISTRIBUTION_ID }}
+          WAF_WEB_ACL_ARN: ${{ secrets.WAF_WEB_ACL_ARN }}
+          LOG_BUCKET: ${{ secrets.LOG_BUCKET }}
+
+      - name: Upload audit results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: audit-results
+          path: |
+            gate_result.json
+            badge.txt
+            pr_comment.md
+          retention-days: 30
+
+      - name: Comment on commit with audit results
+        uses: actions/github-script@v7
+        if: always()
+        with:
+          script: |
+            const fs = require('fs');
+            let badge = 'UNKNOWN';
+            let comment = 'Audit check: Status unknown';
+            
+            try {
+              if (fs.existsSync('badge.txt')) {
+                badge = fs.readFileSync('badge.txt', 'utf8').trim();
+              }
+              if (fs.existsSync('pr_comment.md')) {
+                comment = fs.readFileSync('pr_comment.md', 'utf8');
+              }
+            } catch (err) {
+              console.log('Could not read audit files:', err);
+            }
+            
+            const statusEmoji = {
+              'GREEN': '✅',
+              'YELLOW': '⚠️',
+              'RED': '❌'
+            };
+            
+            const emoji = statusEmoji[badge] || '❓';
+            
+            const finalComment = `## ${emoji} Audit Gates Result: ${badge}
+            
+            ${comment}
+            
+            [View full audit artifacts in Actions](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            `;
+            
+            github.rest.repos.createCommitComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+              body: finalComment
+            });
+
+  create-release:
+    name: Create Release Notes
+    runs-on: ubuntu-latest
+    needs: [terraform-apply, saopaulo-apply]
+    if: success()
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$LAST_TAG" ]; then
+            git log --oneline --pretty=format:"- %h: %s" HEAD | head -20
+          else
+            git log ${LAST_TAG}..HEAD --oneline --pretty=format:"- %h: %s"
+          fi > CHANGELOG.txt
+          cat CHANGELOG.txt
+
+      - name: Upload changelog
+        uses: actions/upload-artifact@v3
+        with:
+          name: deployment-changelog
+          path: CHANGELOG.txt
+          retention-days: 30

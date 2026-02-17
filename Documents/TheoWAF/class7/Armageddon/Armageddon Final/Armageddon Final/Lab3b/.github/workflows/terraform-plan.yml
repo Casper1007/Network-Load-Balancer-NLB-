@@ -1,0 +1,127 @@
+name: Terraform Plan (Validation)
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '**.tf'
+      - 'terraform.tfvars'
+      - '.github/workflows/terraform-plan.yml'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  terraform-plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        working-directory: ['.', 'saopaulo']
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: latest
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-1
+
+      - name: Terraform init
+        working-directory: ${{ matrix.working-directory }}
+        run: terraform init
+
+      - name: Terraform format check
+        working-directory: ${{ matrix.working-directory }}
+        run: terraform fmt -check -recursive
+        continue-on-error: true
+
+      - name: Terraform validate
+        working-directory: ${{ matrix.working-directory }}
+        run: terraform validate
+
+      - name: Terraform plan
+        working-directory: ${{ matrix.working-directory }}
+        run: terraform plan -no-color -out=tfplan.binary
+
+      - name: Generate plan summary
+        working-directory: ${{ matrix.working-directory }}
+        run: terraform show -no-color tfplan.binary > tfplan.txt || true
+
+      - name: Comment PR with plan
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        with:
+          script: |
+            const fs = require('fs');
+            const planFile = '${{ matrix.working-directory }}/tfplan.txt';
+            let planOutput = '';
+            
+            try {
+              planOutput = fs.readFileSync(planFile, 'utf8');
+            } catch (err) {
+              planOutput = 'Plan file not found or could not be read';
+            }
+            
+            const maxChars = 65536;
+            const truncated = planOutput.length > maxChars;
+            const displayPlan = truncated 
+              ? planOutput.substring(0, maxChars) + '\n\n... (truncated)'
+              : planOutput;
+            
+            const comment = `## Terraform Plan - ${{ matrix.working-directory }}
+            
+            \`\`\`
+            ${displayPlan}
+            \`\`\`
+            
+            **Directory:** ${{ matrix.working-directory }}
+            `;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+  tflint:
+    name: TFLint Check
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        working-directory: ['.', 'saopaulo']
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Cache plugin dir
+        uses: actions/cache@v3
+        with:
+          path: ~/.tflint.d/plugins
+          key: ubuntu-latest-tflint-${{ hashFiles('.tflint.hcl') }}
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+
+      - name: Init TFLint
+        working-directory: ${{ matrix.working-directory }}
+        run: tflint --init
+
+      - name: Run TFLint
+        working-directory: ${{ matrix.working-directory }}
+        run: tflint -f compact
+        continue-on-error: true
