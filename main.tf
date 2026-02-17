@@ -1,6 +1,7 @@
 ############################################
 # Locals (naming convention: satellite-*)
 ############################################
+# Final CI/CD verification trigger (non-functional comment).
 locals {
   name_prefix = var.project_name
   ports_http  = 80
