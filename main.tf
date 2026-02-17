@@ -1,6 +1,7 @@
 ############################################
 # Locals (naming convention: satellite-*)
 ############################################
+# CI trigger: non-functional change to run Lab 3 workflow.
 locals {
   name_prefix = var.project_name
   ports_http  = 80
