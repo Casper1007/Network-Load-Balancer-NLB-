@@ -26,12 +26,24 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Check AWS secrets
+        id: aws_secrets
+        run: |
+          if [ -n "${{ secrets.AWS_ACCESS_KEY_ID }}" ] && [ -n "${{ secrets.AWS_SECRET_ACCESS_KEY }}" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "AWS secrets are missing. Skipping deploy steps."
+          fi
+
       - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v2
+        if: steps.aws_secrets.outputs.configured == 'true'
+        uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: latest
 
       - name: Configure AWS credentials
+        if: steps.aws_secrets.outputs.configured == 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -39,38 +51,51 @@ jobs:
           aws-region: ap-northeast-1
 
       - name: Terraform init
+        if: steps.aws_secrets.outputs.configured == 'true'
         working-directory: ${{ matrix.working-directory }}
         run: terraform init
 
       - name: Terraform format check
+        if: steps.aws_secrets.outputs.configured == 'true'
         working-directory: ${{ matrix.working-directory }}
         run: terraform fmt -check -recursive
         continue-on-error: true
 
       - name: Terraform validate
+        if: steps.aws_secrets.outputs.configured == 'true'
         working-directory: ${{ matrix.working-directory }}
         run: terraform validate
 
       - name: Terraform plan
+        if: steps.aws_secrets.outputs.configured == 'true'
         working-directory: ${{ matrix.working-directory }}
         run: terraform plan -no-color -out=tfplan.binary
         id: plan
 
       - name: Terraform apply
+        if: steps.aws_secrets.outputs.configured == 'true'
         working-directory: ${{ matrix.working-directory }}
         run: terraform apply -auto-approve tfplan.binary
 
       - name: Generate state summary
+        if: steps.aws_secrets.outputs.configured == 'true'
         working-directory: ${{ matrix.working-directory }}
         run: terraform show -no-color > tfstate_summary.txt || true
 
       - name: Upload state summary as artifact
-        uses: actions/upload-artifact@v3
-        if: always()
+        if: always() && steps.aws_secrets.outputs.configured == 'true'
+        uses: actions/upload-artifact@v4
         with:
           name: terraform-state-${{ matrix.working-directory }}
           path: ${{ matrix.working-directory }}/tfstate_summary.txt
           retention-days: 30
+
+      - name: Missing AWS secrets notice
+        if: always()
+        run: |
+          if [ "${{ steps.aws_secrets.outputs.configured }}" != "true" ]; then
+            echo "AWS secrets are not configured. Add AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in repository secrets."
+          fi
 
   saopaulo-apply:
     name: Terraform Apply (São Paulo)
@@ -81,12 +106,24 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Check AWS secrets
+        id: aws_secrets
+        run: |
+          if [ -n "${{ secrets.AWS_ACCESS_KEY_ID }}" ] && [ -n "${{ secrets.AWS_SECRET_ACCESS_KEY }}" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "AWS secrets are missing. Skipping deploy steps."
+          fi
+
       - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v2
+        if: steps.aws_secrets.outputs.configured == 'true'
+        uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: latest
 
       - name: Configure AWS credentials
+        if: steps.aws_secrets.outputs.configured == 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -94,29 +131,34 @@ jobs:
           aws-region: sa-east-1
 
       - name: Terraform init
+        if: steps.aws_secrets.outputs.configured == 'true'
         working-directory: saopaulo
         run: terraform init
 
       - name: Terraform validate
+        if: steps.aws_secrets.outputs.configured == 'true'
         working-directory: saopaulo
         run: terraform validate
 
       - name: Terraform plan
+        if: steps.aws_secrets.outputs.configured == 'true'
         working-directory: saopaulo
         run: terraform plan -no-color -out=tfplan.binary
         id: plan
 
       - name: Terraform apply
+        if: steps.aws_secrets.outputs.configured == 'true'
         working-directory: saopaulo
         run: terraform apply -auto-approve tfplan.binary
 
       - name: Generate state summary
+        if: steps.aws_secrets.outputs.configured == 'true'
         working-directory: saopaulo
         run: terraform show -no-color > tfstate_summary.txt || true
 
       - name: Upload state summary as artifact
-        uses: actions/upload-artifact@v3
-        if: always()
+        uses: actions/upload-artifact@v4
+        if: always() && steps.aws_secrets.outputs.configured == 'true'
         with:
           name: terraform-state-saopaulo
           path: saopaulo/tfstate_summary.txt
@@ -133,7 +175,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
@@ -143,6 +185,7 @@ jobs:
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
+        continue-on-error: true
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -160,7 +203,7 @@ jobs:
           LOG_BUCKET: ${{ secrets.LOG_BUCKET }}
 
       - name: Upload audit results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: audit-results
@@ -236,7 +279,7 @@ jobs:
           cat CHANGELOG.txt
 
       - name: Upload changelog
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: deployment-changelog
           path: CHANGELOG.txt
