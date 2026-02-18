@@ -10,7 +10,7 @@
 
 # CloudTrail Bucket (Tokyo)
 resource "aws_s3_bucket" "chrisbarm_cloudtrail_bucket" {
-  bucket = "chrisbarm-cloudtrail-logs-${data.aws_caller_identity.current.account_id}"
+  bucket        = "chrisbarm-cloudtrail-logs-${data.aws_caller_identity.current.account_id}"
   force_destroy = var.allow_teardown
   tags = {
     Name       = "chrisbarm-cloudtrail-logs"
@@ -83,7 +83,7 @@ resource "aws_s3_bucket_policy" "chrisbarm_cloudtrail_policy" {
 
 # CloudFront Logs Bucket (Tokyo)
 resource "aws_s3_bucket" "chrisbarm_cloudfront_logs_bucket" {
-  bucket = "chrisbarm-cloudfront-logs-${data.aws_caller_identity.current.account_id}"
+  bucket        = "chrisbarm-cloudfront-logs-${data.aws_caller_identity.current.account_id}"
   force_destroy = var.allow_teardown
   tags = {
     Name       = "chrisbarm-cloudfront-logs"
@@ -115,7 +115,7 @@ resource "aws_s3_bucket_acl" "chrisbarm_cloudfront_logs_acl" {
 
 # WAF Logs Bucket (Tokyo)
 resource "aws_s3_bucket" "chrisbarm_waf_logs_bucket" {
-  bucket = "chrisbarm-waf-logs-${data.aws_caller_identity.current.account_id}"
+  bucket        = "chrisbarm-waf-logs-${data.aws_caller_identity.current.account_id}"
   force_destroy = var.allow_teardown
   tags = {
     Name       = "chrisbarm-waf-logs"
@@ -134,7 +134,7 @@ resource "aws_s3_bucket_versioning" "chrisbarm_waf_logs_versioning" {
 
 # VPC Flow Logs Bucket (Tokyo)
 resource "aws_s3_bucket" "chrisbarm_flowlogs_bucket" {
-  bucket = "chrisbarm-flowlogs-${data.aws_caller_identity.current.account_id}"
+  bucket        = "chrisbarm-flowlogs-${data.aws_caller_identity.current.account_id}"
   force_destroy = var.allow_teardown
   tags = {
     Name       = "chrisbarm-flowlogs"
@@ -149,6 +149,41 @@ resource "aws_s3_bucket_versioning" "chrisbarm_flowlogs_versioning" {
   versioning_configuration {
     status = "Enabled"
   }
+}
+
+resource "aws_s3_bucket_policy" "chrisbarm_flowlogs_policy" {
+  bucket = aws_s3_bucket.chrisbarm_flowlogs_bucket.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AWSLogDeliveryAclCheck"
+        Effect = "Allow"
+        Principal = {
+          Service = "delivery.logs.amazonaws.com"
+        }
+        Action = [
+          "s3:GetBucketAcl",
+          "s3:GetBucketLocation"
+        ]
+        Resource = aws_s3_bucket.chrisbarm_flowlogs_bucket.arn
+      },
+      {
+        Sid    = "AWSLogDeliveryWrite"
+        Effect = "Allow"
+        Principal = {
+          Service = "delivery.logs.amazonaws.com"
+        }
+        Action   = "s3:PutObject"
+        Resource = "${aws_s3_bucket.chrisbarm_flowlogs_bucket.arn}/AWSLogs/${data.aws_caller_identity.current.account_id}/*"
+        Condition = {
+          StringEquals = {
+            "s3:x-amz-acl" = "bucket-owner-full-control"
+          }
+        }
+      }
+    ]
+  })
 }
 
 # ============================================================================

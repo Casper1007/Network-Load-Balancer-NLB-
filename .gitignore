@@ -1,5 +1,10 @@
 # Terraform
 .terraform/
+.DS_Store
+
+# Generated local compare/diff reports
+compare_report*.txt
+diff_report*.txt
 *.tfstate
 *.tfstate.*
 *.tfstate.backup

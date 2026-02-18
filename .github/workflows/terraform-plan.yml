@@ -5,8 +5,8 @@ on:
     branches:
       - main
     paths:
-      - '**.tf'
-      - 'terraform.tfvars'
+      - '**/*.tf'
+      - '**/*.tfvars'
       - '.github/workflows/terraform-plan.yml'
 
 permissions:
@@ -19,7 +19,28 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        working-directory: ['.', 'saopaulo']
+        include:
+          # Try the common layouts this lab uses. Steps will skip directories that
+          # don't exist or don't contain any *.tf files.
+          - stack: tokyo
+            dir: .
+            aws-region: ap-northeast-1
+          - stack: tokyo
+            dir: Lab3b
+            aws-region: ap-northeast-1
+          - stack: tokyo
+            dir: Terraform
+            aws-region: ap-northeast-1
+
+          - stack: saopaulo
+            dir: saopaulo
+            aws-region: sa-east-1
+          - stack: saopaulo
+            dir: Lab3b/saopaulo
+            aws-region: sa-east-1
+          - stack: saopaulo
+            dir: Sao Paulo
+            aws-region: sa-east-1
     
     steps:
       - name: Checkout code
@@ -40,6 +61,7 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: latest
+          terraform_wrapper: false
 
       - name: Configure AWS credentials
         if: steps.aws_secrets.outputs.configured == 'true'
@@ -47,41 +69,95 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-northeast-1
+          aws-region: ${{ matrix.aws-region }}
+
+      - name: Detect Terraform directory
+        id: detect
+        if: steps.aws_secrets.outputs.configured == 'true'
+        run: |
+          set -euo pipefail
+          DIR='${{ matrix.dir }}'
+          echo "stack=${{ matrix.stack }}" >> "$GITHUB_OUTPUT"
+          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+
+          if [ ! -d "$DIR" ]; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "has_tf=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "exists=true" >> "$GITHUB_OUTPUT"
+          cd "$DIR"
+
+          shopt -s nullglob
+          files=( *.tf )
+          if [ ${#files[@]} -gt 0 ]; then
+            echo "has_tf=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_tf=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Debug working directory
+        if: steps.aws_secrets.outputs.configured == 'true'
+        run: |
+          set -euo pipefail
+          DIR='${{ steps.detect.outputs.dir }}'
+          echo "Stack: ${{ steps.detect.outputs.stack }}"
+          echo "Dir: $DIR"
+          if [ ! -d "$DIR" ]; then
+            echo "Directory does not exist; skipping."
+            exit 0
+          fi
+          cd "$DIR"
+          pwd
+          ls -la
+          echo "---"
+          echo "Terraform files:" 
+          ls -la *.tf || true
 
       - name: Terraform init
-        if: steps.aws_secrets.outputs.configured == 'true'
-        working-directory: ${{ matrix.working-directory }}
-        run: terraform init
+        if: steps.aws_secrets.outputs.configured == 'true' && steps.detect.outputs.has_tf == 'true'
+        run: |
+          set -euo pipefail
+          cd '${{ steps.detect.outputs.dir }}'
+          terraform init -input=false
 
       - name: Terraform format check
-        if: steps.aws_secrets.outputs.configured == 'true'
-        working-directory: ${{ matrix.working-directory }}
-        run: terraform fmt -check -recursive
+        if: steps.aws_secrets.outputs.configured == 'true' && steps.detect.outputs.has_tf == 'true'
+        run: |
+          set -euo pipefail
+          cd '${{ steps.detect.outputs.dir }}'
+          terraform fmt -check -recursive
         continue-on-error: true
 
       - name: Terraform validate
-        if: steps.aws_secrets.outputs.configured == 'true'
-        working-directory: ${{ matrix.working-directory }}
-        run: terraform validate
+        if: steps.aws_secrets.outputs.configured == 'true' && steps.detect.outputs.has_tf == 'true'
+        run: |
+          set -euo pipefail
+          cd '${{ steps.detect.outputs.dir }}'
+          terraform validate
 
       - name: Terraform plan
-        if: steps.aws_secrets.outputs.configured == 'true'
-        working-directory: ${{ matrix.working-directory }}
-        run: terraform plan -no-color -out=tfplan.binary
+        if: steps.aws_secrets.outputs.configured == 'true' && steps.detect.outputs.has_tf == 'true'
+        run: |
+          set -euo pipefail
+          cd '${{ steps.detect.outputs.dir }}'
+          terraform plan -input=false -no-color -out=tfplan.binary
 
       - name: Generate plan summary
-        if: steps.aws_secrets.outputs.configured == 'true'
-        working-directory: ${{ matrix.working-directory }}
-        run: terraform show -no-color tfplan.binary > tfplan.txt || true
+        if: steps.aws_secrets.outputs.configured == 'true' && steps.detect.outputs.has_tf == 'true'
+        run: |
+          set -euo pipefail
+          cd '${{ steps.detect.outputs.dir }}'
+          terraform show -no-color tfplan.binary > tfplan.txt || true
 
       - name: Comment PR with plan
         uses: actions/github-script@v7
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && steps.aws_secrets.outputs.configured == 'true' && steps.detect.outputs.has_tf == 'true'
         with:
           script: |
             const fs = require('fs');
-            const planFile = '${{ matrix.working-directory }}/tfplan.txt';
+            const planFile = '${{ steps.detect.outputs.dir }}/tfplan.txt';
             let planOutput = '';
             
             try {
@@ -96,13 +172,13 @@ jobs:
               ? planOutput.substring(0, maxChars) + '\n\n... (truncated)'
               : planOutput;
             
-            const comment = `## Terraform Plan - ${{ matrix.working-directory }}
+            const comment = `## Terraform Plan - ${{ steps.detect.outputs.stack }} (${{ steps.detect.outputs.dir }})
             
             \`\`\`
             ${displayPlan}
             \`\`\`
             
-            **Directory:** ${{ matrix.working-directory }}
+            **Directory:** ${{ steps.detect.outputs.dir }}
             `;
             
             github.rest.issues.createComment({
@@ -117,7 +193,13 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        working-directory: ['.', 'saopaulo']
+        include:
+          - dir: .
+          - dir: Lab3b
+          - dir: Terraform
+          - dir: saopaulo
+          - dir: Lab3b/saopaulo
+          - dir: Sao Paulo
     
     steps:
       - name: Checkout code
@@ -135,10 +217,36 @@ jobs:
           tflint_version: latest
 
       - name: Init TFLint
-        working-directory: ${{ matrix.working-directory }}
-        run: tflint --init
+        run: |
+          set -euo pipefail
+          DIR='${{ matrix.dir }}'
+          if [ ! -d "$DIR" ]; then
+            echo "Skipping (missing dir): $DIR"
+            exit 0
+          fi
+          cd "$DIR"
+          shopt -s nullglob
+          files=( *.tf )
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "Skipping (no .tf files): $DIR"
+            exit 0
+          fi
+          tflint --init
 
       - name: Run TFLint
-        working-directory: ${{ matrix.working-directory }}
-        run: tflint -f compact
+        run: |
+          set -euo pipefail
+          DIR='${{ matrix.dir }}'
+          if [ ! -d "$DIR" ]; then
+            echo "Skipping (missing dir): $DIR"
+            exit 0
+          fi
+          cd "$DIR"
+          shopt -s nullglob
+          files=( *.tf )
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "Skipping (no .tf files): $DIR"
+            exit 0
+          fi
+          tflint -f compact
         continue-on-error: true

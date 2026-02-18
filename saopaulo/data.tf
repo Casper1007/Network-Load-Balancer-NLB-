@@ -26,9 +26,12 @@ locals {
   tokyo_rds_endpoint = var.use_tokyo_remote_state ? data.terraform_remote_state.tokyo[0].outputs.tokyo_rds_endpoint : var.tokyo_rds_endpoint
   tokyo_rds_port     = var.use_tokyo_remote_state ? try(data.terraform_remote_state.tokyo[0].outputs.tokyo_rds_port, 3306) : var.tokyo_rds_port
 
-  tokyo_tgw_peering_attachment_id = coalesce(
-    var.tokyo_tgw_peering_attachment_id,
-    try(data.terraform_remote_state.tokyo[0].outputs.tokyo_tgw_peering_attachment_id, null),
-    try(data.terraform_remote_state.tokyo_local[0].outputs.tokyo_tgw_peering_attachment_id, null)
+  tokyo_tgw_peering_attachment_id = try(
+    coalesce(
+      var.tokyo_tgw_peering_attachment_id,
+      try(data.terraform_remote_state.tokyo[0].outputs.tokyo_tgw_peering_attachment_id, null),
+      try(data.terraform_remote_state.tokyo_local[0].outputs.tokyo_tgw_peering_attachment_id, null)
+    ),
+    null
   )
 }

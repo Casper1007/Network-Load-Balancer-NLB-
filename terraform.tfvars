@@ -1,8 +1,10 @@
 # Tokyo state vars
 saopaulo_vpc_cidr = "10.1.0.0/16"
 
-# Sao Paulo TGW ID (set after Sao Paulo apply)
-saopaulo_tgw_id = "tgw-0497d6f12cf552d21"
+# Sao Paulo TGW ID (optional)
+# - If left null, the Tokyo stack will auto-read it from ./saopaulo/terraform.tfstate
+#   after the Sao Paulo stack has been applied.
+saopaulo_tgw_id = null
 
 # Sao Paulo account ID (set after Sao Paulo apply)
 saopaulo_account_id = "198547498722"

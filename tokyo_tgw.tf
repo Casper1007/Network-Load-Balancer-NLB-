@@ -33,12 +33,19 @@ resource "aws_ec2_transit_gateway_route_table_propagation" "shinjuku_vpc_prop01"
 
 # Explanation: Shinjuku opens a corridor request to Liberdade—compute may travel, data may not.
 resource "aws_ec2_transit_gateway_peering_attachment" "shinjuku_to_liberdade_peer01" {
-  count                   = var.enable_saopaulo_tgw_peering && var.saopaulo_tgw_id != null ? 1 : 0
+  count                   = var.enable_saopaulo_tgw_peering && local.resolved_saopaulo_tgw_id != null ? 1 : 0
   transit_gateway_id      = aws_ec2_transit_gateway.shinjuku_tgw01.id
   peer_region             = "sa-east-1"
-  peer_transit_gateway_id = var.saopaulo_tgw_id # set from Sao Paulo state output
-  peer_account_id         = var.saopaulo_account_id
+  peer_transit_gateway_id = local.resolved_saopaulo_tgw_id
+  peer_account_id         = local.resolved_saopaulo_account_id
   tags                    = { Name = "shinjuku-to-liberdade-peer01" }
+
+  lifecycle {
+    precondition {
+      condition     = !var.enable_saopaulo_tgw_peering || local.resolved_saopaulo_tgw_id != null
+      error_message = "Sao Paulo TGW peering is enabled but no Sao Paulo TGW ID is available. Apply ./saopaulo first (to produce saopaulo_tgw_id), or set var.saopaulo_tgw_id explicitly."
+    }
+  }
 }
 
 # Note: Peering attachments cannot be associated with route tables in Tokyo
@@ -47,14 +54,14 @@ resource "aws_ec2_transit_gateway_peering_attachment" "shinjuku_to_liberdade_pee
 
 # Data source to verify peering is in 'available' state before creating routes
 data "aws_ec2_transit_gateway_peering_attachment" "shinjuku_peer_status" {
-  count = var.enable_saopaulo_tgw_peering && var.saopaulo_tgw_id != null ? 1 : 0
+  count = var.enable_saopaulo_tgw_peering && local.resolved_saopaulo_tgw_id != null ? 1 : 0
   id    = aws_ec2_transit_gateway_peering_attachment.shinjuku_to_liberdade_peer01[0].id
 
   depends_on = [aws_ec2_transit_gateway_peering_attachment.shinjuku_to_liberdade_peer01]
 }
 
 resource "aws_ec2_transit_gateway_route" "shinjuku_to_liberdade_tgw_route01" {
-  count                          = var.enable_saopaulo_tgw_peering && var.saopaulo_tgw_id != null ? 1 : 0
+  count                          = var.enable_saopaulo_tgw_peering && local.resolved_saopaulo_tgw_id != null ? 1 : 0
   destination_cidr_block         = var.saopaulo_vpc_cidr
   transit_gateway_attachment_id  = aws_ec2_transit_gateway_peering_attachment.shinjuku_to_liberdade_peer01[0].id
   transit_gateway_route_table_id = aws_ec2_transit_gateway_route_table.shinjuku_tgw_rt01.id
