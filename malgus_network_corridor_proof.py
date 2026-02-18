@@ -14,6 +14,7 @@ This script verifies:
 
 import boto3
 import json
+import sys
 from datetime import datetime
 
 def get_tgw_info(region):
@@ -36,15 +37,29 @@ def get_tgw_peering_attachments(region):
     ec2 = boto3.client('ec2', region_name=region)
     try:
         peerings = ec2.describe_transit_gateway_peering_attachments()
-        return [{
-            "attachment_id": p['TransitGatewayAttachmentId'],
-            "state": p['State'],
-            "local_tgw": p['TransitGatewayId'],
-            "peer_tgw": p['AccepterTgwInfo']['TransitGatewayId'],
-            "peer_region": p['AccepterTgwInfo']['Region'],
-            "requester_region": p['RequesterTgwInfo']['Region']
-        } for p in peerings.get('TransitGatewayPeeringAttachments', [])]
-    except:
+        results = []
+        for p in peerings.get('TransitGatewayPeeringAttachments', []):
+            requester = p.get('RequesterTgwInfo', {}) or {}
+            accepter = p.get('AccepterTgwInfo', {}) or {}
+
+            if requester.get('Region') == region:
+                local = requester
+                peer = accepter
+            else:
+                local = accepter
+                peer = requester
+
+            results.append({
+                "attachment_id": p.get('TransitGatewayAttachmentId'),
+                "state": p.get('State') or (p.get('Status', {}) or {}).get('Code'),
+                "local_tgw": local.get('TransitGatewayId'),
+                "peer_tgw": peer.get('TransitGatewayId'),
+                "peer_region": peer.get('Region'),
+                "requester_region": requester.get('Region'),
+                "accepter_region": accepter.get('Region'),
+            })
+        return results
+    except Exception:
         return []
 
 def get_tgw_route_tables(region, tgw_id):
@@ -173,6 +188,9 @@ def main():
     
     print("\nFull Evidence:")
     print(json.dumps(evidence, indent=2))
+
+    if evidence["compliance_check"]["assertion"].startswith("FAIL"):
+        sys.exit(2)
 
 if __name__ == "__main__":
     main()

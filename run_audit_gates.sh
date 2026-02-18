@@ -20,6 +20,11 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
+# Windows shells can default to cp1252, which will crash on emoji/unicode output.
+# Force UTF-8 for all Python evidence scripts.
+export PYTHONUTF8=1
+export PYTHONIOENCODING=utf-8
+
 # Check Python3 is available
 if ! command -v python3 &> /dev/null; then
     echo -e "${RED}❌ ERROR: python3 not found${NC}"
@@ -31,7 +36,7 @@ fi
 if ! python3 -c "import boto3" &> /dev/null 2>&1; then
     echo -e "${YELLOW}⚠️  WARNING: boto3 not found${NC}"
     echo "Installing boto3..."
-    pip3 install boto3 --quiet || {
+    python3 -m pip install boto3 --quiet || {
         echo -e "${RED}❌ ERROR: Failed to install boto3${NC}"
         exit 1
     }
@@ -61,11 +66,11 @@ echo "Gate 1/6: Data Residency Proof"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 if python3 ../malgus_data_residency_enhanced.py > gate1_output.txt 2>&1; then
     echo -e "${GREEN}✅ PASS: Data residency proof generated${NC}"
-    ((PASSED_GATES++))
+    PASSED_GATES=$((PASSED_GATES + 1))
 else
     echo -e "${RED}❌ FAIL: Data residency proof failed${NC}"
     cat gate1_output.txt
-    ((FAILED_GATES++))
+    FAILED_GATES=$((FAILED_GATES + 1))
 fi
 echo ""
 
@@ -77,11 +82,11 @@ echo "Gate 2/6: Network Corridor Proof (TGW)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 if python3 ../malgus_network_corridor_proof.py > gate2_output.txt 2>&1; then
     echo -e "${GREEN}✅ PASS: Network corridor proof generated${NC}"
-    ((PASSED_GATES++))
+    PASSED_GATES=$((PASSED_GATES + 1))
 else
     echo -e "${RED}❌ FAIL: Network corridor proof failed${NC}"
     cat gate2_output.txt
-    ((FAILED_GATES++))
+    FAILED_GATES=$((FAILED_GATES + 1))
 fi
 echo ""
 
@@ -93,11 +98,11 @@ echo "Gate 3/6: CloudTrail Change Evidence"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 if python3 ../malgus_cloudtrail_last_changes.py > gate3_output.txt 2>&1; then
     echo -e "${GREEN}✅ PASS: CloudTrail evidence generated${NC}"
-    ((PASSED_GATES++))
+    PASSED_GATES=$((PASSED_GATES + 1))
 else
     echo -e "${YELLOW}⚠️  PARTIAL: CloudTrail data available but script needs update${NC}"
     # Don't fail this gate if script is older version
-    ((PASSED_GATES++))
+    PASSED_GATES=$((PASSED_GATES + 1))
 fi
 echo ""
 
@@ -109,10 +114,10 @@ echo "Gate 4/6: CloudFront Access Logs Evidence"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 if python3 ../malgus_cloudfront_log_explainer.py > gate4_output.txt 2>&1; then
     echo -e "${GREEN}✅ PASS: CloudFront logs evidence generated${NC}"
-    ((PASSED_GATES++))
+    PASSED_GATES=$((PASSED_GATES + 1))
 else
     echo -e "${YELLOW}⚠️  PARTIAL: CloudFront logging configured (check S3 bucket)${NC}"
-    ((PASSED_GATES++))
+    PASSED_GATES=$((PASSED_GATES + 1))
 fi
 echo ""
 
@@ -124,10 +129,10 @@ echo "Gate 5/6: WAF Block/Allow Evidence"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 if python3 ../malgus_waf_summary.py > gate5_output.txt 2>&1; then
     echo -e "${GREEN}✅ PASS: WAF evidence generated${NC}"
-    ((PASSED_GATES++))
+    PASSED_GATES=$((PASSED_GATES + 1))
 else
     echo -e "${YELLOW}⚠️  PARTIAL: WAF configured (check CloudWatch Logs)${NC}"
-    ((PASSED_GATES++))
+    PASSED_GATES=$((PASSED_GATES + 1))
 fi
 echo ""
 
@@ -139,11 +144,11 @@ echo "Gate 6/6: Complete Audit Evidence Package"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 if python3 ../malgus_audit_evidence_package.py > gate6_output.txt 2>&1; then
     echo -e "${GREEN}✅ PASS: Complete audit package generated${NC}"
-    ((PASSED_GATES++))
+    PASSED_GATES=$((PASSED_GATES + 1))
 else
     echo -e "${RED}❌ FAIL: Audit package generation failed${NC}"
     cat gate6_output.txt
-    ((FAILED_GATES++))
+    FAILED_GATES=$((FAILED_GATES + 1))
 fi
 echo ""
 

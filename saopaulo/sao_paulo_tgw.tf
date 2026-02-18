@@ -13,8 +13,8 @@ resource "aws_ec2_transit_gateway_route_table" "liberdade_tgw_rt01" {
 
 # Accept the corridor from Shinjuku
 resource "aws_ec2_transit_gateway_peering_attachment_accepter" "liberdade_accept_peer01" {
-  count                         = var.tokyo_tgw_peering_attachment_id == null ? 0 : 1
-  transit_gateway_attachment_id = var.tokyo_tgw_peering_attachment_id
+  count                         = local.tokyo_tgw_peering_attachment_id == null ? 0 : 1
+  transit_gateway_attachment_id = local.tokyo_tgw_peering_attachment_id
   tags                          = { Name = "liberdade-accept-peer01" }
 }
 
@@ -42,7 +42,7 @@ resource "aws_ec2_transit_gateway_route_table_propagation" "liberdade_vpc_prop01
 # AWS requires static routes only for cross-region peering
 
 resource "aws_ec2_transit_gateway_route" "liberdade_to_shinjuku_tgw_route01" {
-  count                          = var.tokyo_tgw_peering_attachment_id == null ? 0 : 1
+  count                          = local.tokyo_tgw_peering_attachment_id == null ? 0 : 1
   destination_cidr_block         = local.tokyo_vpc_cidr
   transit_gateway_attachment_id  = aws_ec2_transit_gateway_peering_attachment_accepter.liberdade_accept_peer01[0].id
   transit_gateway_route_table_id = aws_ec2_transit_gateway_route_table.liberdade_tgw_rt01.id

@@ -37,3 +37,9 @@ venv/
 
 # Logs
 *.log
+
+# Generated audit evidence output (do not commit)
+audit_evidence_*/
+
+# Occasionally generated in repo root by direct script runs
+network_corridor_proof.json

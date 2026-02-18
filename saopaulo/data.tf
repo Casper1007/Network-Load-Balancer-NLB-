@@ -11,8 +11,24 @@ data "terraform_remote_state" "tokyo" {
   }
 }
 
+# Local fallback: read Tokyo outputs from the sibling stack's local state file.
+# This avoids manual copy/paste of the TGW peering attachment ID during the lab.
+data "terraform_remote_state" "tokyo_local" {
+  count   = var.use_tokyo_remote_state ? 0 : (fileexists("${path.module}/../terraform.tfstate") ? 1 : 0)
+  backend = "local"
+  config = {
+    path = "${path.module}/../terraform.tfstate"
+  }
+}
+
 locals {
   tokyo_vpc_cidr     = var.use_tokyo_remote_state ? data.terraform_remote_state.tokyo[0].outputs.tokyo_vpc_cidr : var.tokyo_vpc_cidr
   tokyo_rds_endpoint = var.use_tokyo_remote_state ? data.terraform_remote_state.tokyo[0].outputs.tokyo_rds_endpoint : var.tokyo_rds_endpoint
   tokyo_rds_port     = var.use_tokyo_remote_state ? try(data.terraform_remote_state.tokyo[0].outputs.tokyo_rds_port, 3306) : var.tokyo_rds_port
+
+  tokyo_tgw_peering_attachment_id = coalesce(
+    var.tokyo_tgw_peering_attachment_id,
+    try(data.terraform_remote_state.tokyo[0].outputs.tokyo_tgw_peering_attachment_id, null),
+    try(data.terraform_remote_state.tokyo_local[0].outputs.tokyo_tgw_peering_attachment_id, null)
+  )
 }
