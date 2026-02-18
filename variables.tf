@@ -158,3 +158,9 @@ variable "enable_saopaulo_tgw_peering" {
   type        = bool
   default     = false
 }
+
+variable "allow_teardown" {
+  description = "When true, allows destructive teardown behaviors (e.g., force-destroy versioned/non-empty S3 audit buckets). Keep false by default."
+  type        = bool
+  default     = false
+}

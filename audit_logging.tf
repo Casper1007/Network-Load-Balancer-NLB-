@@ -11,7 +11,7 @@
 # CloudTrail Bucket (Tokyo)
 resource "aws_s3_bucket" "chrisbarm_cloudtrail_bucket" {
   bucket = "chrisbarm-cloudtrail-logs-${data.aws_caller_identity.current.account_id}"
-  force_destroy = true
+  force_destroy = var.allow_teardown
   tags = {
     Name       = "chrisbarm-cloudtrail-logs"
     Purpose    = "Audit Evidence - Change Trail"
@@ -84,7 +84,7 @@ resource "aws_s3_bucket_policy" "chrisbarm_cloudtrail_policy" {
 # CloudFront Logs Bucket (Tokyo)
 resource "aws_s3_bucket" "chrisbarm_cloudfront_logs_bucket" {
   bucket = "chrisbarm-cloudfront-logs-${data.aws_caller_identity.current.account_id}"
-  force_destroy = true
+  force_destroy = var.allow_teardown
   tags = {
     Name       = "chrisbarm-cloudfront-logs"
     Purpose    = "Audit Evidence - Edge Access Trail"
@@ -116,7 +116,7 @@ resource "aws_s3_bucket_acl" "chrisbarm_cloudfront_logs_acl" {
 # WAF Logs Bucket (Tokyo)
 resource "aws_s3_bucket" "chrisbarm_waf_logs_bucket" {
   bucket = "chrisbarm-waf-logs-${data.aws_caller_identity.current.account_id}"
-  force_destroy = true
+  force_destroy = var.allow_teardown
   tags = {
     Name       = "chrisbarm-waf-logs"
     Purpose    = "Audit Evidence - Security Events"
@@ -135,7 +135,7 @@ resource "aws_s3_bucket_versioning" "chrisbarm_waf_logs_versioning" {
 # VPC Flow Logs Bucket (Tokyo)
 resource "aws_s3_bucket" "chrisbarm_flowlogs_bucket" {
   bucket = "chrisbarm-flowlogs-${data.aws_caller_identity.current.account_id}"
-  force_destroy = true
+  force_destroy = var.allow_teardown
   tags = {
     Name       = "chrisbarm-flowlogs"
     Purpose    = "Audit Evidence - Network Corridor Proof"
