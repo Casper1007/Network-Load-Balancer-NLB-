@@ -83,12 +83,12 @@ aws cloudtrail lookup-events --region ap-northeast-1 --max-results 10
 | Requirement | Status | Evidence File |
 |-------------|--------|---------------|
 | Data Residency | ✅ PASS | 01_data-residency-proof.txt |
-| Network Corridor | ⚠ PENDING | 05_network-corridor-proof.txt |
-| Edge Security | ⚠ PENDING | 02_edge-proof-cloudfront.txt, 03_waf-proof.txt |
+| Network Corridor | ✅ PASS | 05_network-corridor-proof.txt |
+| Edge Security | ✅ PASS | 02_edge-proof-cloudfront.txt, 03_waf-proof.txt |
 | Change Trail | ✅ PASS | 04_cloudtrail-change-proof.txt |
 | Log Centralization | ✅ PASS | All proof files |
 
-**Overall Compliance: IN PROGRESS**
+**Overall Compliance: 100% ✅**
 
 ## Key Findings
 
@@ -99,16 +99,52 @@ aws cloudtrail lookup-events --region ap-northeast-1 --max-results 10
 - No cross-region database replication
 
 ### Controlled Connectivity ✓
-- Transit Gateway peering (not VPC peering) (pending)
+- Transit Gateway peering (not VPC peering)
 - Explicit routing in both regions
 - No default routes or internet gateways in private subnets
-- TGW peering state: pending
+- TGW peering state: available
 
 ### Edge Protection ✓
-- CloudFront distribution pending deployment
+- CloudFront distribution deployed
 - WAF with 3 rules (rate limiting + 2 managed rule sets)
 - Origin protection via custom headers
 - Direct ALB access blocked
+
+## Workflow (What / How / Why)
+
+This lab is evaluated on **proof**, so the workflow is designed to turn infrastructure state + AWS telemetry into auditor-ready artifacts.
+
+### What
+- **IaC workflow**: Terraform deploys Tokyo (data authority) and São Paulo (compute-only) with a TGW corridor.
+- **Evidence workflow**: scripts + gates generate the 6 proofs auditors expect (residency, corridor, edge, WAF, change trail, retention).
+- **CI/CD workflow**: GitHub Actions runs validation/audit jobs to continuously detect drift and compliance regressions.
+
+### How
+
+**Local (student/operator) workflow**
+1) Deploy Tokyo: `terraform apply`
+2) Deploy São Paulo: `cd saopaulo && terraform apply`
+3) Generate evidence: `./run_audit_gates.sh` (creates a timestamped `audit_evidence_*/` bundle)
+
+**CI/CD (GitHub Actions) workflow**
+- `.github/workflows/terraform-plan.yml`: PR-time fmt/validate/plan (prevents broken IaC from merging)
+- `.github/workflows/terraform-apply.yml`: push-to-main apply (Tokyo then São Paulo) + uploads artifacts
+- `.github/workflows/security-audit.yml`: scheduled / manual audit run of Malgus scripts (compliance drift detection)
+- `.github/workflows/test-connection.yml`: manual smoke test for AWS/Terraform tooling
+
+### Why
+- **Repeatability**: same steps produce the same evidence package (auditors care about process).
+- **Drift detection**: CI/CD catches unauthorized or accidental security changes via CloudTrail/WAF/log checks.
+- **Regulator readiness**: evidence is timestamped, centralized, and designed to be re-generated on demand.
+
+## Pentest Importance (Why we include it)
+
+Auditors accept configuration proof, but security teams require **adversarial validation**. A pentest helps confirm:
+- CloudFront/WAF can’t be bypassed to reach the origin directly
+- WAF rules actually block common attack classes (SQLi/XSS/bad inputs) without breaking expected traffic
+- TGW corridor doesn’t allow unintended east/west paths (misroutes, accidental peering, over-permissive SG rules)
+
+Pentest outcomes should be documented as: scope, methodology, findings, remediation, and re-test results (attach as a separate report if required).
 
 ### Audit Trail ✓
 - CloudTrail active in Tokyo (global + regional events)

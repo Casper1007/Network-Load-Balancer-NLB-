@@ -64,7 +64,7 @@ Global healthcare platform serving patients worldwide while maintaining strict A
 └────────────────────────────────┼──────────────────────┘
                                  │ TGW Peering
                                  │ (Cross-Region)
-                                 │ Status: pending
+                                 │ Status: available
 ┌────────────────────────────────▼──────────────────────┐
 │ São Paulo (sa-east-1)          │                      │
 │                         ┌──────┴───────┐              │
@@ -98,11 +98,11 @@ Global healthcare platform serving patients worldwide while maintaining strict A
 ### Routing Rules
 **Tokyo TGW Route Table:**
 - 10.0.0.0/16 → local VPC (propagated)
-- 10.1.0.0/16 → São Paulo via TGW peering (static, pending)
+- 10.1.0.0/16 → São Paulo via TGW peering (static)
 
 **São Paulo TGW Route Table:**
 - 10.1.0.0/16 → local VPC (propagated)
-- 10.0.0.0/16 → Tokyo via TGW peering (static, pending)
+- 10.0.0.0/16 → Tokyo via TGW peering (static)
 
 ### Why TGW Instead of VPC Peering?
 - Centralized routing control
@@ -185,10 +185,26 @@ aws cloudfront get-distribution --id <cloudfront-distribution-id> | jq '.Distrib
 - **Regions Deployed**: 2 (Tokyo, São Paulo)
 - **PHI Storage Regions**: 1 (Tokyo only)
 - **Transit Gateways**: 2 (1 per region)
-- **TGW Peering Attachments**: 0 (pending)
+- **TGW Peering Attachments**: 1 (available)
 - **RDS Instances**: 1 (Tokyo)
-- **CloudFront Distributions**: 0 (pending)
+- **CloudFront Distributions**: 1 (deployed)
 - **WAF Rules**: 3 (Rate Limit + 2 Managed Rule Sets)
+
+## Workflow (What / How / Why)
+
+### What
+- Terraform creates the compliant topology (Tokyo data authority, São Paulo compute-only, TGW corridor).
+- Evidence scripts convert AWS control-plane state (RDS/TGW/CloudFront/WAF/CloudTrail) into timestamped proof artifacts.
+- CI/CD continuously validates IaC correctness and re-runs audit checks to catch drift.
+
+### How
+- **Deploy (two-phase TGW peering)**: Tokyo apply (creates peering request) → São Paulo apply (accepts peering) → Tokyo apply (adds static routes)
+- **Generate evidence**: `run_audit_gates.sh` runs the Malgus scripts and produces an evidence bundle
+- **CI/CD**: GitHub Actions workflows in `.github/workflows/` run plan/apply/audit tasks on PR/push/schedule
+
+### Why
+- Audits require both architecture and **repeatable evidence generation**.
+- CI/CD provides continuous assurance: you can prove “still compliant” instead of “was compliant once.”
 
 ---
 **Generated**: 2026-02-15  
